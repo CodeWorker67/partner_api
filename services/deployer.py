@@ -1,3 +1,5 @@
+import time
+
 import os
 import shutil
 import subprocess
@@ -63,6 +65,7 @@ def _write_instance_env(
     partner_tg_id: int,
     bot_username: str,
     shared: Dict[str, str],
+    source_bot_id: Optional[int] = None,
 ) -> None:
     inst = _instance_dir(bot_id)
     lines = [
@@ -73,7 +76,9 @@ def _write_instance_env(
         f"DATABASE_PATH={DATABASE_PATH}",
         f"BOT_URL=https://t.me/{bot_username}",
     ]
-    skip = {"TG_TOKEN", "BOT_ID", "OWNER_TG_ID", "BOT_USERNAME", "DATABASE_PATH", "BOT_URL"}
+    if source_bot_id:
+        lines.append(f"SOURCE_BOT_ID={source_bot_id}")
+    skip = {"TG_TOKEN", "BOT_ID", "OWNER_TG_ID", "BOT_USERNAME", "DATABASE_PATH", "BOT_URL", "SOURCE_BOT_ID"}
     for key, val in shared.items():
         if key not in skip:
             lines.append(f"{key}={val}")
@@ -101,6 +106,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory={inst}
+EnvironmentFile=-{inst / '.env'}
 ExecStart={inst / 'venv' / 'bin' / 'python'} main.py
 Restart=on-failure
 RestartSec=10
@@ -120,6 +126,7 @@ def deploy_bot(
     token: str,
     partner_tg_id: int,
     bot_username: str,
+    source_bot_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     if not BOT_TEMPLATE_DIR.exists():
         raise DeployError(f"Bot template not found: {BOT_TEMPLATE_DIR}")
@@ -130,7 +137,7 @@ def deploy_bot(
     shutil.copytree(BOT_TEMPLATE_DIR, inst, ignore=shutil.ignore_patterns("venv", "__pycache__", ".git", "logs", "*.db"))
 
     shared = _load_shared_env()
-    _write_instance_env(bot_id, token, partner_tg_id, bot_username, shared)
+    _write_instance_env(bot_id, token, partner_tg_id, bot_username, shared, source_bot_id)
     _create_venv(bot_id)
 
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -141,6 +148,8 @@ def deploy_bot(
     _run(["systemctl", "restart", name], check=False)
     _run(["systemctl", "start", name])
 
+    # Дать процессу стартовать; если сразу падает — status будет error/stopped
+    time.sleep(2)
     status = _systemctl_status(bot_id)
     started_at = datetime.now(timezone.utc).isoformat()
     instance_id = f"{name}@{inst}"
@@ -151,6 +160,7 @@ def deploy_bot(
         bot_username=bot_username,
         status=status,
         started_at=started_at,
+        source_bot_id=source_bot_id,
     )
     return {
         "bot_id": bot_id,

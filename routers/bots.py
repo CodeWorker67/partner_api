@@ -13,6 +13,7 @@ class DeployRequest(BaseModel):
     token: str = Field(..., min_length=10)
     partner_tg_id: int = Field(..., gt=0)
     bot_username: str = Field(..., min_length=1)
+    source_bot_id: int | None = Field(None, gt=0)
 
 
 @router.get("/health")
@@ -28,6 +29,7 @@ async def deploy(req: DeployRequest):
             req.token,
             req.partner_tg_id,
             req.bot_username.lstrip("@"),
+            req.source_bot_id,
         )
     except DeployError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

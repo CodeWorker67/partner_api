@@ -37,6 +37,8 @@ def init_partner_bot_settings(bot_id: int, owner_tg_id: int) -> None:
                 bot_id INTEGER PRIMARY KEY,
                 owner_tg_id BIGINT NOT NULL,
                 partner_balance INTEGER DEFAULT 0,
+                balance_own_bot INTEGER DEFAULT 0,
+                balance_child_bots INTEGER DEFAULT 0,
                 partner_pay INTEGER DEFAULT 0,
                 channel_id BIGINT,
                 channel_url TEXT,

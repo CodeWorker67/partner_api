@@ -38,6 +38,7 @@ class BotRegistry:
         bot_username: str,
         status: str,
         started_at: Optional[str] = None,
+        source_bot_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         data = self._read()
         key = str(bot_id)
@@ -51,6 +52,8 @@ class BotRegistry:
             "started_at": started_at or existing.get("started_at") or _utc_now_iso(),
             "updated_at": _utc_now_iso(),
         }
+        if source_bot_id:
+            record["source_bot_id"] = source_bot_id
         data[key] = record
         self._write(data)
         return record
