@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from pathlib import Path
+from typing import Optional
 
 from config import DATABASE_PATH, DEFAULT_TRIAL_DAYS
 
@@ -20,14 +20,40 @@ DEFAULT_PRICES = {
     "m12_d10": 3239,
 }
 
+_IDENTITY_COLUMNS = (
+    ("partner_username", "TEXT"),
+    ("bot_username", "TEXT"),
+    ("bot_display_name", "TEXT"),
+    ("source_bot_id", "BIGINT"),
+)
+
 
 def ensure_database_dir() -> None:
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
-def init_partner_bot_settings(bot_id: int, owner_tg_id: int) -> None:
-    """Создаёт запись настроек бота при первом deploy (если таблица уже есть)."""
+def _ensure_identity_columns(conn: sqlite3.Connection) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(partner_bot_settings)")}
+    for name, col_type in _IDENTITY_COLUMNS:
+        if name not in cols:
+            conn.execute(f"ALTER TABLE partner_bot_settings ADD COLUMN {name} {col_type}")
+
+
+def init_partner_bot_settings(
+    bot_id: int,
+    owner_tg_id: int,
+    *,
+    partner_username: Optional[str] = None,
+    bot_username: Optional[str] = None,
+    bot_display_name: Optional[str] = None,
+    source_bot_id: Optional[int] = None,
+) -> None:
+    """Создаёт/обновляет запись настроек бота при deploy."""
     ensure_database_dir()
+    partner_username = (partner_username or "").lstrip("@") or None
+    bot_username = (bot_username or "").lstrip("@") or None
+    bot_display_name = (bot_display_name or "").strip() or None
+
     conn = sqlite3.connect(str(DATABASE_PATH))
     try:
         conn.execute("PRAGMA journal_mode=WAL")
@@ -44,24 +70,51 @@ def init_partner_bot_settings(bot_id: int, owner_tg_id: int) -> None:
                 channel_url TEXT,
                 channel_required BOOLEAN DEFAULT 0,
                 trial_days INTEGER DEFAULT 3,
-                prices_json TEXT
+                prices_json TEXT,
+                partner_username TEXT,
+                bot_username TEXT,
+                bot_display_name TEXT,
+                source_bot_id BIGINT
             )
             """
         )
+        _ensure_identity_columns(conn)
         cur = conn.execute(
             "SELECT 1 FROM partner_bot_settings WHERE bot_id = ?",
             (bot_id,),
         )
         if cur.fetchone():
-            return
-        conn.execute(
-            """
-            INSERT INTO partner_bot_settings
-            (bot_id, owner_tg_id, partner_balance, partner_pay, trial_days, prices_json)
-            VALUES (?, ?, 0, 0, ?, ?)
-            """,
-            (bot_id, owner_tg_id, DEFAULT_TRIAL_DAYS, json.dumps(DEFAULT_PRICES)),
-        )
+            # COALESCE: не затираем уже заполненные поля, если при redeploy поле не передали
+            conn.execute(
+                """
+                UPDATE partner_bot_settings
+                SET partner_username = COALESCE(?, partner_username),
+                    bot_username = COALESCE(?, bot_username),
+                    bot_display_name = COALESCE(?, bot_display_name),
+                    source_bot_id = COALESCE(?, source_bot_id)
+                WHERE bot_id = ?
+                """,
+                (partner_username, bot_username, bot_display_name, source_bot_id, bot_id),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO partner_bot_settings
+                (bot_id, owner_tg_id, partner_balance, partner_pay, trial_days, prices_json,
+                 partner_username, bot_username, bot_display_name, source_bot_id)
+                VALUES (?, ?, 0, 0, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    bot_id,
+                    owner_tg_id,
+                    DEFAULT_TRIAL_DAYS,
+                    json.dumps(DEFAULT_PRICES),
+                    partner_username,
+                    bot_username,
+                    bot_display_name,
+                    source_bot_id,
+                ),
+            )
         conn.commit()
     finally:
         conn.close()

@@ -127,6 +127,8 @@ def deploy_bot(
     partner_tg_id: int,
     bot_username: str,
     source_bot_id: Optional[int] = None,
+    partner_username: Optional[str] = None,
+    bot_display_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not BOT_TEMPLATE_DIR.exists():
         raise DeployError(f"Bot template not found: {BOT_TEMPLATE_DIR}")
@@ -141,7 +143,14 @@ def deploy_bot(
     _create_venv(bot_id)
 
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    init_partner_bot_settings(bot_id, partner_tg_id)
+    init_partner_bot_settings(
+        bot_id,
+        partner_tg_id,
+        partner_username=partner_username,
+        bot_username=bot_username,
+        bot_display_name=bot_display_name,
+        source_bot_id=source_bot_id,
+    )
 
     _write_systemd_unit(bot_id)
     name = _service_name(bot_id)
