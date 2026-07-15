@@ -17,3 +17,8 @@ REGISTRY_PATH: Path = Path(os.environ.get("REGISTRY_PATH", "/root/partner_api/re
 SHARED_ENV_PATH: Path = Path(os.environ.get("SHARED_ENV_PATH", "/root/partner_api/shared.env"))
 
 DEFAULT_TRIAL_DAYS: int = int(os.environ.get("DEFAULT_TRIAL_DAYS", "3"))
+
+# Для pull identity-полей из мастер-бота (тот же ключ, что у партнёрских ботов)
+MASTER_BOT_API_URL: str = (os.environ.get("MASTER_BOT_API_URL") or "").strip().rstrip("/")
+MASTER_BOT_API_KEY: str = (os.environ.get("MASTER_BOT_API_KEY") or "").strip()
+MASTER_BOT_API_TIMEOUT: float = float(os.environ.get("MASTER_BOT_API_TIMEOUT", "45"))

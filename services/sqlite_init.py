@@ -120,6 +120,131 @@ def init_partner_bot_settings(
         conn.close()
 
 
+def list_existing_bot_ids() -> list[int]:
+    ensure_database_dir()
+    if not DATABASE_PATH.exists():
+        return []
+    conn = sqlite3.connect(str(DATABASE_PATH))
+    try:
+        try:
+            rows = conn.execute(
+                "SELECT bot_id FROM partner_bot_settings ORDER BY bot_id"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        return [int(r[0]) for r in rows]
+    finally:
+        conn.close()
+
+
+def apply_identity_settings(
+    items: list[dict],
+    *,
+    dry_run: bool = False,
+) -> dict:
+    """
+    Обновляет identity-поля только для bot_id, которые уже есть в partner_bot_settings.
+    items: [{bot_id, partner_username?, bot_username?, bot_display_name?, source_bot_id?}, ...]
+    """
+    ensure_database_dir()
+    if not DATABASE_PATH.exists():
+        return {
+            "updated": 0,
+            "skipped_missing": 0,
+            "received": len(items),
+            "existing_bot_ids": 0,
+            "dry_run": dry_run,
+            "preview": [],
+        }
+
+    conn = sqlite3.connect(str(DATABASE_PATH))
+    try:
+        try:
+            _ensure_identity_columns(conn)
+            conn.commit()
+        except sqlite3.OperationalError:
+            return {
+                "updated": 0,
+                "skipped_missing": len(items),
+                "received": len(items),
+                "existing_bot_ids": 0,
+                "dry_run": dry_run,
+                "preview": [],
+                "error": "partner_bot_settings table missing",
+            }
+
+        existing = {
+            int(r[0])
+            for r in conn.execute("SELECT bot_id FROM partner_bot_settings").fetchall()
+        }
+        preview: list[dict] = []
+        updates: list[tuple] = []
+        skipped_missing = 0
+
+        for raw in items:
+            try:
+                bot_id = int(raw["bot_id"])
+            except (KeyError, TypeError, ValueError):
+                skipped_missing += 1
+                continue
+            if bot_id not in existing:
+                skipped_missing += 1
+                continue
+
+            partner_username = raw.get("partner_username")
+            if isinstance(partner_username, str):
+                partner_username = partner_username.lstrip("@") or None
+            bot_username = raw.get("bot_username")
+            if isinstance(bot_username, str):
+                bot_username = bot_username.lstrip("@") or None
+            bot_display_name = raw.get("bot_display_name")
+            if isinstance(bot_display_name, str):
+                bot_display_name = bot_display_name.strip() or None
+            source_bot_id = raw.get("source_bot_id")
+            if source_bot_id is not None:
+                try:
+                    source_bot_id = int(source_bot_id)
+                except (TypeError, ValueError):
+                    source_bot_id = None
+
+            row = {
+                "bot_id": bot_id,
+                "partner_username": partner_username,
+                "bot_username": bot_username,
+                "bot_display_name": bot_display_name,
+                "source_bot_id": source_bot_id,
+            }
+            preview.append(row)
+            updates.append(
+                (partner_username, bot_username, bot_display_name, source_bot_id, bot_id)
+            )
+
+        if not dry_run and updates:
+            conn.executemany(
+                """
+                UPDATE partner_bot_settings
+                SET partner_username = COALESCE(?, partner_username),
+                    bot_username = COALESCE(?, bot_username),
+                    bot_display_name = COALESCE(?, bot_display_name),
+                    source_bot_id = COALESCE(?, source_bot_id)
+                WHERE bot_id = ?
+                """,
+                updates,
+            )
+            conn.commit()
+
+        return {
+            "updated": len(updates),
+            "skipped_missing": skipped_missing,
+            "received": len(items),
+            "existing_bot_ids": len(existing),
+            "dry_run": dry_run,
+            "preview": preview[:50],
+        }
+    finally:
+        conn.close()
+
+
 def get_bot_stats(bot_id: int) -> dict:
     ensure_database_dir()
     if not DATABASE_PATH.exists():
