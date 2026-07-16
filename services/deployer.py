@@ -183,6 +183,7 @@ def deploy_bot(
 def stop_bot(bot_id: int) -> Dict[str, Any]:
     name = _service_name(bot_id)
     _run(["systemctl", "stop", name], check=False)
+    _run(["systemctl", "disable", name], check=False)
     status = _systemctl_status(bot_id)
     registry.update_status(bot_id, status)
     return {"bot_id": bot_id, "status": status}
@@ -190,6 +191,7 @@ def stop_bot(bot_id: int) -> Dict[str, Any]:
 
 def restart_bot(bot_id: int) -> Dict[str, Any]:
     name = _service_name(bot_id)
+    _run(["systemctl", "enable", name], check=False)
     _run(["systemctl", "restart", name], check=False)
     status = _systemctl_status(bot_id)
     registry.update_status(bot_id, status)
